@@ -1,0 +1,5 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": { "noEmit": true, "types": ["vite/client"] },
+  "include": ["env.d.ts", "main.tsx", "stories.ts", "component-types.ts", "private", "rn-shim.ts", "../src"]
+}
