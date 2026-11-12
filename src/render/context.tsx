@@ -1,4 +1,4 @@
-import { createContext, useContext, type ComponentType, type ReactNode } from 'react';
+import { createContext, useContext, type ComponentType, type ReactElement, type ReactNode } from 'react';
 import type { StyleProp, ViewStyle } from 'react-native';
 import type { Manifest } from '../manifest/types';
 import type { ViewNode, ViewNodeDefinition } from '../parse/registry';
@@ -41,6 +41,7 @@ export interface ViewContextValue {
   sessionKey: string;
   onShown?: (key: string, event: TrackingEvent) => void;
   renderMarkdown?: ComponentType<MarkdownRendererProps>;
+  nodeWrapper?: (node: ViewNode, el: ReactElement) => ReactNode;
 }
 
 export interface MarkdownRendererProps {

@@ -83,6 +83,10 @@ function bindString(s: string, scope: Scope): unknown {
   });
 }
 
+/** Reports which template map produced each bound object. Set only for the duration of a traced bind. */
+let activeTrace: ((bound: object, source: object) => void) | null = null;
+const eachOrigin = new WeakMap<object, object>();
+
 function bindValue(node: unknown, scope: Scope, depth: number): unknown {
   if (typeof node === 'string') return bindString(node, scope);
   if (node === null || typeof node !== 'object') return node;
@@ -99,6 +103,7 @@ function bindList(list: unknown[], scope: Scope, depth: number): unknown[] {
       const src = typeof m.$each === 'string' ? readPath(m.$each, scope) : undefined;
       if (!Array.isArray(src)) continue;
       const template = Object.fromEntries(Object.entries(m).filter(([k]) => k !== '$each'));
+      if (activeTrace) eachOrigin.set(template, m);
       src.forEach((item, at) => {
         const v = bindValue(template, { props: scope.props, item, at }, depth);
         if (v !== OMIT) out.push(v);
@@ -127,17 +132,21 @@ function bindMap(map: Props, scope: Scope, depth: number): unknown {
     const b = bindValue(v, scope, depth);
     if (b !== OMIT) out[k] = b;
   }
+  activeTrace?.(out, eachOrigin.get(map) ?? map);
   return out;
 }
 
 export type BindResult = unknown | typeof TOO_DEEP;
 
-export function bindLayout(layout: unknown, props: Props = {}): BindResult {
+export function bindLayout(layout: unknown, props: Props = {}, trace?: (bound: object, source: object) => void): BindResult {
+  activeTrace = trace ?? null;
   try {
     const v = bindValue(layout, { props, item: undefined, at: 0 }, 0);
     return v === OMIT ? null : v;
   } catch (e) {
     if (e instanceof TooDeep) return TOO_DEEP;
     return null;
+  } finally {
+    activeTrace = null;
   }
 }

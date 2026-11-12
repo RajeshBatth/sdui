@@ -2,32 +2,15 @@ import { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { View } from 'react-native';
 import { parseView, viewNodeRegistry } from '../src';
-import { SNAPSHOT_MANIFEST } from '../src/manifest/snapshot';
-import type { Manifest } from '../src/manifest/types';
-import { createRenderRegistry } from '../src/nodes/views';
 import { ViewDraftsProvider } from '../src/render/drafts';
 import { ViewRenderer } from '../src/render/ViewRenderer';
 import { figmaUrl, STORIES, type Story } from './stories';
-import battery from './assets/battery.svg';
-import cellular from './assets/cellular.svg';
-import close from './assets/close.svg';
-import locationIcon from './assets/location.svg';
-import menuDots from './assets/menu-dots.svg';
-import paperclip from './assets/paperclip.svg';
-import soundwave from './assets/soundwave.svg';
-import sparkle from './assets/sparkle.svg';
-import wifi from './assets/wifi.svg';
+import { BACKGROUNDS, ChatFrame, manifest, registry, WIDTHS, type Frame } from './shared';
+import { Editor } from './editor/Editor';
+import { openStoryInPlayground, playgroundHash } from './editor/fromStory';
+import { compileJsx, instantiate } from '../src/authoring/compile';
+import type { TemplateManifest } from '../src/authoring/template';
 
-const WEB_FONTS: Manifest['font'] = {
-  default: { regular: 'DM Sans', medium: 'DM Sans', semibold: 'DM Sans', bold: 'DM Sans', black: 'DM Sans' },
-  geist: { regular: 'Geist', semibold: 'Geist' },
-  inter: { semibold: 'Inter' },
-};
-const manifest: Manifest = { ...SNAPSHOT_MANIFEST, font: WEB_FONTS };
-const registry = createRenderRegistry();
-
-const WIDTHS = [320, 360, 412];
-const BACKGROUNDS = { white: '#FFFFFF', screen: SNAPSHOT_MANIFEST.color.screen! };
 
 interface LogEntry {
   at: string;
@@ -44,64 +27,6 @@ function useRoute(): [string, (id: string) => void] {
     return () => window.removeEventListener('hashchange', on);
   }, []);
   return [id, (next) => (location.hash = `/${next}`)];
-}
-
-type Frame = 'chat' | 'plain';
-
-function ChatFrame({ width, prompt, background, children }: { width: number; prompt: string; background: string; children: React.ReactNode }) {
-  return (
-    <div className="phone" style={{ width: width + 40, background }}>
-      <div className="statusbar">
-        <span className="clock">9:41</span>
-        <span className="levels">
-          <img src={cellular} alt="" />
-          <img src={wifi} alt="" />
-          <img src={battery} alt="" />
-        </span>
-      </div>
-      <div className="chatHeader">
-        <span className="round">
-          <img src={close} alt="Close" />
-        </span>
-        <span className="round">
-          <img src={menuDots} alt="More" />
-        </span>
-      </div>
-      <div className="chatBody">
-        <div className="bubble">{prompt}</div>
-        <div className="reply">
-          <div className="myra">
-            <span className="myraText">Myra</span>
-            <img className="myraStar" src={sparkle} alt="" />
-          </div>
-          {children}
-        </div>
-      </div>
-      <div className="composer">
-        <div className="composerCard">
-          <div className="placeholder">
-            <span className="caret">|</span>Ask me anything
-          </div>
-          <div className="composerRow">
-            <div className="composerLeft">
-              <span className="chip iconChip">
-                <img src={paperclip} alt="Attach" />
-              </span>
-              <span className="chip modeChip">
-                <img src={locationIcon} alt="" />
-                myItinerary Mode
-              </span>
-            </div>
-            <span className="speak">
-              <img src={soundwave} alt="" />
-              <span className="speakText">Speak</span>
-            </span>
-          </div>
-        </div>
-        <div className="homeIndicator" />
-      </div>
-    </div>
-  );
 }
 
 function Canvas({
@@ -185,7 +110,7 @@ function Sidebar({ current, onPick }: { current: string; onPick: (id: string) =>
   return (
     <nav className="sidebar">
       <div className="sidebarHead">
-        <div className="brand">SDUI viewer</div>
+        <ModeSwitch mode="explore" />
         <input className="search" placeholder="Search stories" value={q} onChange={(e) => setQ(e.target.value)} />
       </div>
       <div className="sidebarList">
@@ -288,6 +213,15 @@ function StoryView({ story, settings, onSettings }: { story: Story; settings: Se
   const missing = story.section === 'Atoms' && !registry.has(story.group);
   const onLog = useMemo(() => (e: LogEntry) => setLog((l) => [e, ...l].slice(0, 50)), []);
   const edited = source !== JSON.stringify(story.raw, null, 2);
+  const [opening, setOpening] = useState<string | null>(null);
+  const editInPlayground = async () => {
+    setOpening('Opening…');
+    try {
+      location.hash = playgroundHash(await openStoryInPlayground(story, raw));
+    } catch (e) {
+      setOpening(`Couldn't open: ${(e as Error).message}`);
+    }
+  };
 
   return (
     <>
@@ -302,6 +236,9 @@ function StoryView({ story, settings, onSettings }: { story: Story; settings: Se
             {story.group}
           </span>
           <h1>{story.title}</h1>
+          <button className="editInPg" onClick={() => void editInPlayground()} disabled={opening === 'Opening…'} title="Make a template from this story (or reopen the one made before) and edit it in the playground">
+            {opening ?? 'Edit in Playground →'}
+          </button>
           <div className="links">
             {story.figma ? (
               <a href={figmaUrl(story.figma)} target="_blank" rel="noreferrer">
@@ -353,7 +290,7 @@ function StoryView({ story, settings, onSettings }: { story: Story; settings: Se
             </div>
           ) : null}
           {tab === 'json' ? (
-            <div className="editor">
+            <div className="jsonEditor">
               <textarea
                 spellCheck={false}
                 value={source}
@@ -408,8 +345,61 @@ function Viewer() {
   );
 }
 
+/** Headless render of a saved template, for the MCP render tool. Reports `sdui-ready:<height>` or `sdui-error:<message>` in the title. */
+function TemplateBare({ id, params }: { id: string; params: URLSearchParams }) {
+  const [state, setState] = useState<{ raw?: unknown; prompt?: string; error?: string }>({});
+  const width = Number(params.get('w') ?? 360);
+  const frame: Frame = params.get('frame') === 'chat' ? 'chat' : 'plain';
+  useEffect(() => {
+    fetch(`/api/templates/${encodeURIComponent(id)}`)
+      .then(async (r) => {
+        const body = await r.json();
+        if (!r.ok) throw new Error(body.error ?? r.statusText);
+        const { manifest: m, sources } = body as { manifest: TemplateManifest; sources: Record<string, string> };
+        const variant = params.get('variant') ?? m.variants[0]?.id ?? '';
+        if (!(variant in sources)) throw new Error(`Unknown variant "${variant}"`);
+        const sample = m.samples[Number(params.get('sample') ?? 0)]?.data ?? {};
+        const compiled = compileJsx(sources[variant]!);
+        setState({ raw: instantiate(compiled, sample), prompt: m.name });
+      })
+      .catch((e: Error) => setState({ error: e.message }));
+  }, [id]);
+  useEffect(() => {
+    if (state.error) {
+      document.title = `sdui-error:${state.error}`;
+      return;
+    }
+    if (!state.raw) return;
+    let live = true;
+    const settle = async () => {
+      await document.fonts.ready;
+      await new Promise((r) => setTimeout(r, 50));
+      await Promise.all([...document.images].map((img) => (img.complete ? null : new Promise((r) => {
+                img.addEventListener('load', r, { once: true });
+                img.addEventListener('error', r, { once: true });
+              }))));
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      const el = document.querySelector('.bare')?.firstElementChild as HTMLElement | null;
+      if (live) document.title = `sdui-ready:${Math.ceil(el?.getBoundingClientRect().height ?? 0)}`;
+    };
+    void settle();
+    return () => {
+      live = false;
+    };
+  }, [state]);
+  if (state.error) return <div className="empty">{state.error}</div>;
+  if (!state.raw) return null;
+  return (
+    <div className="bare">
+      <Canvas raw={state.raw} width={width} background="#FFFFFF" place={`template-${id}`} frame={frame} prompt={state.prompt} />
+    </div>
+  );
+}
+
 function Bare() {
   const params = new URLSearchParams(location.search);
+  const template = params.get('template');
+  if (template) return <TemplateBare id={template} params={params} />;
   const story = STORIES.find((s) => s.id === params.get('story'));
   const width = Number(params.get('w') ?? 320);
   if (!story) return <div className="empty">Unknown story</div>;
@@ -420,5 +410,31 @@ function Bare() {
   );
 }
 
+export function ModeSwitch({ mode }: { mode: 'explore' | 'playground' }) {
+  return (
+    <div className="modeRow">
+      <span className="brand">SDUI</span>
+      <div className="modeSwitch" role="tablist">
+        <a role="tab" aria-selected={mode === 'explore'} className={mode === 'explore' ? 'on' : ''} href="#/">
+          Explore
+        </a>
+        <a role="tab" aria-selected={mode === 'playground'} className={mode === 'playground' ? 'on' : ''} href="#/playground">
+          Playground
+        </a>
+      </div>
+    </div>
+  );
+}
+
+function App() {
+  const [playground, setPlayground] = useState(() => location.hash.startsWith('#/playground'));
+  useEffect(() => {
+    const on = () => setPlayground(location.hash.startsWith('#/playground'));
+    window.addEventListener('hashchange', on);
+    return () => window.removeEventListener('hashchange', on);
+  }, []);
+  return playground ? <Editor modeSwitch={<ModeSwitch mode="playground" />} /> : <Viewer />;
+}
+
 const bare = new URLSearchParams(location.search).get('bare') === '1';
-createRoot(document.getElementById('root')!).render(bare ? <Bare /> : <Viewer />);
+createRoot(document.getElementById('root')!).render(bare ? <Bare /> : <App />);

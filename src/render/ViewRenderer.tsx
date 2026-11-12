@@ -21,6 +21,7 @@ export interface ViewRendererProps {
   sessionKey?: string;
   onShown?: ViewContextValue['onShown'];
   renderMarkdown?: ViewContextValue['renderMarkdown'];
+  nodeWrapper?: ViewContextValue['nodeWrapper'];
 }
 
 const ALL_AVAILABLE = () => true;
@@ -43,8 +44,9 @@ export function ViewRenderer(p: ViewRendererProps) {
       sessionKey: p.sessionKey ?? p.place,
       onShown: p.onShown,
       renderMarkdown: p.renderMarkdown,
+      nodeWrapper: p.nodeWrapper,
     }),
-    [p.registry, p.onAction, p.onTrack, p.available, p.manifest, p.interactive, p.lastTurn, p.arrivedLive, p.place, p.draftKey, p.sessionKey, p.onShown, p.renderMarkdown],
+    [p.registry, p.onAction, p.onTrack, p.available, p.manifest, p.interactive, p.lastTurn, p.arrivedLive, p.place, p.draftKey, p.sessionKey, p.onShown, p.renderMarkdown, p.nodeWrapper],
   );
   return (
     <ViewContextProvider value={value}>

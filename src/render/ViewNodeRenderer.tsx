@@ -29,7 +29,7 @@ function FrontFade({ isFront, children }: { isFront: boolean; children: React.Re
 }
 
 export const ViewNodeRenderer = memo(function ViewNodeRenderer({ node, style }: { node: ViewNode; style?: StyleProp<ViewStyle> }) {
-  const { registry } = useViewContext();
+  const { registry, nodeWrapper } = useViewContext();
   const front = useContext(FrontContext);
   const entry = registry.get(node.type);
   if (!entry) return null;
@@ -37,5 +37,5 @@ export const ViewNodeRenderer = memo(function ViewNodeRenderer({ node, style }: 
   let el = <View node={node} style={node.grow ? [GROW, style] : style} />;
   if (node.spend === 'onAction' && entry.definition.spendScope) el = <SpendScope node={node}>{el}</SpendScope>;
   if (front && node.id === front.frontId) el = <FrontFade isFront={front.isFront}>{el}</FrontFade>;
-  return el;
+  return nodeWrapper ? <>{nodeWrapper(node, el)}</> : el;
 });

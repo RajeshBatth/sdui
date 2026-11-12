@@ -8,3 +8,8 @@ dist
 playground/private/
 playground/public/photos/
 design/
+
+# secrets (FIGMA_TOKEN etc.)
+.env
+.env.local
+.env.*.local

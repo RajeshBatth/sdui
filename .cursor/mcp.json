@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "sdui": {
+      "command": "node",
+      "args": ["${workspaceFolder}/playground/mcp/sdui-mcp.mjs"]
+    }
+  }
+}
