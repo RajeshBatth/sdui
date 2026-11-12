@@ -1,17 +1,22 @@
 /// <reference types="vite/client" />
 import { SNAPSHOT_MANIFEST } from '../src/manifest/snapshot';
-import { NAMESPACES, type GroupedStory } from './component-types';
+import { NAMESPACES, type FigmaRef, type GroupedStory, type PublicComponent } from './component-types';
 
-const PRIVATE = import.meta.glob<{ GROUPED?: Record<string, GroupedStory> }>('./private/*.ts', { eager: true });
+/** Components published in the repo. */
+const PUBLIC = import.meta.glob<{ COMPONENTS?: Record<string, PublicComponent> }>('./components/*.ts', { eager: true });
+const PUBLIC_COMPONENTS: [string, PublicComponent][] = Object.keys(PUBLIC)
+  .sort((a, b) => (a.endsWith('/core.ts') ? -1 : b.endsWith('/core.ts') ? 1 : a.localeCompare(b)))
+  .flatMap((path) => Object.entries(PUBLIC[path]!.COMPONENTS ?? {}));
+
+/** Git-ignored: the remaining layouts, and Figma links for every component. */
+const PRIVATE = import.meta.glob<{ GROUPED?: Record<string, GroupedStory>; FIGMA_REFS?: Record<string, FigmaRef> }>('./private/*.ts', { eager: true });
+const FIGMA_REFS: Record<string, FigmaRef> = Object.assign({}, ...Object.values(PRIVATE).map((m) => m.FIGMA_REFS ?? {}));
 const PRIVATE_COMPONENTS: [string, GroupedStory][] = Object.keys(PRIVATE)
   .sort((a, b) => (a.endsWith('/core.ts') ? -1 : b.endsWith('/core.ts') ? 1 : a.localeCompare(b)))
   .flatMap((path) => Object.entries(PRIVATE[path]!.GROUPED ?? {}));
 const PRIVATE_PHOTOS = new Set(Object.keys(import.meta.glob('./public/photos/core/*')).map((p) => p.split('/').pop()!));
 
-export interface FigmaRef {
-  file: string;
-  node: string;
-}
+export type { FigmaRef };
 
 export interface Story {
   id: string;
@@ -44,8 +49,11 @@ const PHOTOS: Record<string, [string, string]> = {
   chopta: ['deck-chopta-meadow.png', 'Chopta Meadow Walks'],
   deoria: ['deck-deoria-tal.png', 'Deoria Tal Lake Trek'],
 };
+/** Photos published with the repo (playground/public/assets). */
+const PUBLIC_PHOTOS = new Set(['avatar-1.png', 'avatar-2.png', 'avatar-3.png']);
 const img = (key: string) => {
   const [file, alt] = PHOTOS[key]!;
+  if (PUBLIC_PHOTOS.has(file)) return { url: `/assets/${file}`, alt };
   return { url: PRIVATE_PHOTOS.has(file) ? `/photos/core/${file}` : '/placeholder-photo.svg', alt };
 };
 const col = (...children: unknown[]) => ({ type: 'stack', gap: 'lg', children });
@@ -418,8 +426,8 @@ export const STORIES: Story[] = [
     ),
   ),
   ...NAMESPACES.flatMap((ns) =>
-    PRIVATE_COMPONENTS.filter(([, c]) => c.group === ns).map(
-      ([key, c]): Story => ({ id: `components/${key}`, title: c.title, section: 'Components', group: ns, prompt: c.prompt, raw: c.raw, figma: c.figma }),
-    ),
+    [...PUBLIC_COMPONENTS, ...PRIVATE_COMPONENTS.filter(([key]) => !PUBLIC_COMPONENTS.some(([k]) => k === key))]
+      .filter(([, c]) => c.group === ns)
+      .map(([key, c]): Story => ({ id: `components/${key}`, title: c.title, section: 'Components', group: ns, prompt: c.prompt, raw: c.raw, figma: FIGMA_REFS[key] ?? ('figma' in c ? (c.figma as FigmaRef) : undefined) })),
   ),
 ];

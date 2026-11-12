@@ -19,3 +19,11 @@ export const msg = (text: string) => ({ kind: 'message', text });
 export interface GroupedStory extends ComponentStory {
   group: Namespace;
 }
+
+/** A component published in the repo. Its Figma reference (if any) lives in the private folder as FIGMA_REFS. */
+export interface PublicComponent {
+  group: Namespace;
+  title: string;
+  prompt: string;
+  raw: unknown;
+}
